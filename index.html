@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="./View/Assets/Styles.css">
+    <title>Weather System | CRUD con .NET</title>
+    <style>
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <ul class="nav-links">
+                <a onclick="showSection('dashboard')">🏠 Dashboard</a>
+                <a onclick="showSection('history')">📊 Historial</a>
+                <a onclick="showInfo('about')">ℹ️ Acerca de</a>
+                <a onclick="showInfo('credits')">⭐ Créditos</a>
+            </ul>
+        </nav>
+
+        <div class="header">
+            <h1>🌤️ Weather CRUD System con .NET</h1>
+            <p>API RESTful | Entity Framework | SQLite</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <div id="dashboard" class="dashboard">
+            <!-- Formulario CRUD -->
+            <div class="card">
+                <h2 id="formTitle">➕ Nuevo Registro</h2>
+                <form id="weatherForm">
+                    <input type="hidden" id="recordId">
+                    <div class="form-group">
+                        <label>Ciudad *</label>
+                        <input type="text" id="city" required placeholder="Ej: Madrid">
+                    </div>
+                    <div class="form-group">
+                        <label>Temperatura (°C) *</label>
+                        <input type="number" id="temperature" step="0.1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Sensación Térmica (°C)</label>
+                        <input type="number" id="feelsLike" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Descripción *</label>
+                        <select id="description" required>
+                            <option value="Soleado">☀️ Soleado</option>
+                            <option value="Parcialmente nublado">⛅ Parcialmente nublado</option>
+                            <option value="Nublado">☁️ Nublado</option>
+                            <option value="Lluvia ligera">🌧️ Lluvia ligera</option>
+                            <option value="Tormenta">⛈️ Tormenta</option>
+                            <option value="Niebla">🌫️ Niebla</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Humedad (%)</label>
+                        <input type="number" id="humidity" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Viento (km/h)</label>
+                        <input type="number" id="windSpeed" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Presión (hPa)</label>
+                        <input type="number" id="pressure">
+                    </div>
+                    <div class="form-group">
+                        <label>Icono</label>
+                        <input type="text" id="icon" placeholder="🌤️" maxlength="10">
+                    </div>
+                    <button type="submit" class="btn btn-primary">💾 Guardar</button>
+                    <button type="button" class="btn btn-warning" onclick="resetForm()">🔄 Nuevo</button>
+                </form>
+            </div>
+
+            <!-- Listado de registros -->
+            <div class="card">
+                <h2>📋 Registros Recientes</h2>
+                <div class="search-box">
+                    <input type="text" id="searchCity" placeholder="Buscar por ciudad..." onkeyup="searchByCity()">
+                    <button class="btn btn-primary" onclick="loadAllRecords()">🔄 Actualizar</button>
+                </div>
+                <div class="table-container">
+                    <table id="recordsTable">
+                        <thead>
+                            <tr><th>ID</th><th>Ciudad</th><th>Temp</th><th>Desc</th><th>Fecha</th><th>Acciones</th></tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr><td colspan="6">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="history" style="display:none;">
+            <div class="card">
+                <h2>📜 Historial por Ciudad</h2>
+                <div class="search-box">
+                    <input type="text" id="historyCity" placeholder="Ciudad para ver historial">
+                    <button class="btn btn-primary" onclick="loadHistory()">Ver Historial</button>
+                </div>
+                <div class="table-container">
+                    <table id="historyTable">
+                        <thead><tr><th>ID</th><th>Ciudad</th><th>Temp</th><th>Desc</th><th>Humedad</th><th>Fecha</th><th>Acciones</th></tr></thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://localhost:5001/api/weather'; // Cambia por tu URL real
+        
+        // Mostrar secciones
+        function showSection(section) {
+            document.getElementById('dashboard').style.display = section === 'dashboard' ? 'grid' : 'none';
+            document.getElementById('history').style.display = section === 'history' ? 'block' : 'none';
+            if (section === 'dashboard') loadAllRecords();
+        }
+        
+        // Mostrar alerta
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+            setTimeout(() => alert.style.display = 'none', 3000);
+        }
+        
+        // Cargar todos los registros
+        async function loadAllRecords() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('Error al cargar datos');
+                const records = await response.json();
+                renderTable(records);
+            } catch (error) {
+                showAlert('Error al conectar con el backend: ' + error.message, 'error');
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="6">Error de conexión</td></tr>';
+            }
+        }
+        
+        // Renderizar tabla
+        function renderTable(records) {
+            const tbody = document.getElementById('tableBody');
+            if (!records.length) {
+                tbody.innerHTML = '<tr><td colspan="6">No hay registros</td></tr>';
+                return;
+            }
+            tbody.innerHTML = records.map(record => `
+                <tr>
+                    <td>${record.id}</td>
+                    <td>${record.city}</td>
+                    <td>${record.temperature}°C</td>
+                    <td>${record.icon} ${record.description}</td>
+                    <td>${new Date(record.createdAt).toLocaleDateString()}</td>
+                    <td class="action-buttons">
+                        <button class="btn btn-primary" onclick="editRecord(${record.id})">✏️</button>
+                        <button class="btn btn-danger" onclick="deleteRecord(${record.id})">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // Buscar por ciudad
+        async function searchByCity() {
+            const city = document.getElementById('searchCity').value.trim();
+            if (!city) {
+                loadAllRecords();
+                return;
+            }
+            try {
+                const response = await fetch(`${API_URL}/city/${encodeURIComponent(city)}`);
+                if (!response.ok) throw new Error('Ciudad no encontrada');
+                const record = await response.json();
+                renderTable([record]);
+            } catch (error) {
+                renderTable([]);
+                showAlert(`No se encontró "${city}"`, 'error');
+            }
+        }
+        
+        // Guardar (Crear o Actualizar)
+        document.getElementById('weatherForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('recordId').value;
+            const data = {
+                city: document.getElementById('city').value,
+                temperature: parseFloat(document.getElementById('temperature').value),
+                feelsLike: parseFloat(document.getElementById('feelsLike').value) || 0,
+                description: document.getElementById('description').value,
+                humidity: parseInt(document.getElementById('humidity').value) || 0,
+                windSpeed: parseFloat(document.getElementById('windSpeed').value) || 0,
+                pressure: parseInt(document.getElementById('pressure').value) || 0,
+                icon: document.getElementById('icon').value || '🌤️'
+            };
+            
+            try {
+                let response;
+                if (id) {
+                    response = await fetch(`${API_URL}/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...data, id: parseInt(id) })
+                    });
+                    if (response.ok) showAlert('Registro actualizado', 'success');
+                } else {
+                    response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    if (response.ok) showAlert('Registro creado', 'success');
+                }
+                if (response.ok) {
+                    resetForm();
+                    loadAllRecords();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Error al guardar');
+                }
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        });
+        
+        // Editar registro
+        async function editRecord(id) {
+            try {
+                const response = await fetch(`${API_URL}/${id}`);
+                if (!response.ok) throw new Error('Error al cargar');
+                const record = await response.json();
+                document.getElementById('recordId').value = record.id;
+                document.getElementById('city').value = record.city;
+                document.getElementById('temperature').value = record.temperature;
+                document.getElementById('feelsLike').value = record.feelsLike;
+                document.getElementById('description').value = record.description;
+                document.getElementById('humidity').value = record.humidity;
+                document.getElementById('windSpeed').value = record.windSpeed;
+                document.getElementById('pressure').value = record.pressure;
+                document.getElementById('icon').value = record.icon;
+                document.getElementById('formTitle').textContent = '✏️ Editar Registro';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        }
+        
+        // Eliminar registro
+        async function deleteRecord(id) {
+            if (!confirm('¿Eliminar este registro?')) return;
+            try {
+                const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    showAlert('Registro eliminado', 'success');
+                    loadAllRecords();
+                    resetForm();
+                } else {
+                    throw new Error('Error al eliminar');
+                }
+            } catch (error) {
+                showAlert(error.message, 'error');
+            }
+        }
+        
+        // Resetear formulario
+        function resetForm() {
+            document.getElementById('weatherForm').reset();
+            document.getElementById('recordId').value = '';
+            document.getElementById('formTitle').textContent = '➕ Nuevo Registro';
+        }
+        
+        // Cargar historial
+        async function loadHistory() {
+            const city = document.getElementById('historyCity').value.trim();
+            if (!city) {
+                showAlert('Ingresa una ciudad', 'error');
+                return;
+            }
+            try {
+                const response = await fetch(`${API_URL}/history/${encodeURIComponent(city)}`);
+                if (!response.ok) throw new Error('Sin historial');
+                const records = await response.json();
+                const tbody = document.getElementById('historyBody');
+                if (!records.length) {
+                    tbody.innerHTML = '<tr><td colspan="6">Sin registros</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = records.map(record => `
+                    <tr>
+                        <td>${record.id}</td>
+                        <td>${record.city}</td>
+                        <td>${record.temperature}°C</td>
+                        <td>${record.description}</td>
+                        <td>${record.humidity}%</td>
+                        <td>${new Date(record.createdAt).toLocaleString()}</td>
+                        <td><button class="btn btn-danger" onclick="deleteRecord(${record.id})">🗑️</button></td>
+                    </tr>
+                `).join('');
+                showAlert(`Mostrando ${records.length} registros de ${city}`, 'success');
+            } catch (error) {
+                showAlert(error.message, 'error');
+                document.getElementById('historyBody').innerHTML = '<tr><td colspan="6">Error al cargar</td></tr>';
+            }
+        }
+        
+        // Info modals
+        function showInfo(type) {
+            const messages = {
+                about: '📡 Sistema CRUD completo con ASP.NET Core Web API, Entity Framework Core y SQLite. Operaciones: Crear, Leer, Actualizar, Eliminar.',
+                credits: '✨ Desarrollado con .NET 8 + SQLite + JavaScript moderno. API RESTful con endpoints para gestión de datos meteorológicos.'
+            };
+            alert(messages[type]);
+        }
+        
+        // Inicializar
+        loadAllRecords();
+        showSection('dashboard');
+    </script>
+</body>
+</html>
